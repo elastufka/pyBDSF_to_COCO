@@ -15,6 +15,7 @@ def get_args_parser():
     parser.add_argument('--crop_coords', default=None, type=str, help="""Full path to file where coordinates (SkyCoords) of image crops is located""") 
     parser.add_argument('--crop_dir', default='.', type=str, help="""Folder where image crops are located""") 
     parser.add_argument('--output_file', type=str, help="""Full path in which to write COCO-format json""")
+    parser.add_argument('--solar', type=bool, default=False, help="""Full path in which to write COCO-format json""")
     return parser
 
 def catalog_coords_to_pix(df, wcs):
@@ -54,7 +55,12 @@ def create_image_info(image_id, file_name, image_size, license_id=1, coco_url=""
     return image_info
 
 def create_annotation_info(annotation_id, image_id, bounding_box=None, segmentation=None):
-    bbox = bounding_box.values[0]
+    if not isinstance(bounding_box, list):
+        bbox = bounding_box.values[0]
+        seg = [segmentation.values[0][0].tolist(),segmentation.values[0][1].tolist()]
+    else: 
+        bbox = bounding_box
+        seg = [segmentation[:,1].tolist(), segmentation[:,0].tolist()] #(y,x) -> (x,y)
     area = int(np.product(bbox[-2:]))
     annotation_info = {
         "id": annotation_id,
@@ -63,7 +69,7 @@ def create_annotation_info(annotation_id, image_id, bounding_box=None, segmentat
         "iscrowd": 0,
         "area": area,
         "bbox": bbox,
-        "segmentation": [segmentation.values[0][0].tolist(),segmentation.values[0][1].tolist()]
+        "segmentation": seg
     } 
     return annotation_info
 
@@ -79,6 +85,24 @@ def create_crop_info(i, crop_dir, crop_shape, cdf):
     with open(output_file, 'w') as f: 
         json.dump(crop_json, f)
     return output_file
+
+def main_solar(args, crop_shape = (256,256)):
+    from torch_utils.utils import ma_mask_to_COCO
+    arrs = np.load(args.image)
+
+    def solar_prep(i,arrs):
+        arr = arrs[i]
+        thresh = (np.max(arr)-np.min(arr))/3 + np.min(arr)
+        mask = np.ma.masked_greater_equal(arr,thresh).mask
+        bboxes, segs = ma_mask_to_COCO(mask)
+        #print(len(bboxes), len(segs))
+        cdf = pd.DataFrame({"source_bbox":bboxes, "segmentation":segs})
+        return i, args.crop_dir, crop_shape, cdf
+    
+    async_results = mp_execute_async(create_crop_info, 4, arrs, ifunc = solar_prep, fnargs = [arrs])
+    output = []
+    for async_result in async_results:
+        output.append(async_result.get())
 
 def run_main(args): #for now
     wcs, header, _ = mapdata_from_fits(args.image)
@@ -116,4 +140,7 @@ def run_main(args): #for now
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('pyBDSF_to_COCO', parents=[get_args_parser()])
     args = parser.parse_args()
-    run_main(args)
+    if args.solar:
+        main_solar(args)
+    else:
+        run_main(args)
