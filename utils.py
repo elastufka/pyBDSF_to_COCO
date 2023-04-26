@@ -125,7 +125,7 @@ def single_crop_catalog(df, cc, wcs):
     x1,y1,_,_,_,_ = pixvals_from_Skycoord(wcs, bl, tr)
     res["source_xmin"] -= x1
     res["source_ymin"] -= y1
-    res["source_bbox"] = [adjust_bbox_pixvals(row.source_bbox, x1,y1) for _,row in res.iterrows()]
+    #res["source_bbox"] = [adjust_bbox_pixvals(row.source_bbox, x1,y1) for _,row in res.iterrows()]
     #res.apply(lambda x: adjust_bbox_pixvals(x["source_bbox"], x1,y1), axis=1)
     res["segmentation"] = [adjust_segmentation_pixvals(row.segmentation.values[0],x1,y1) for _,row in res.iterrows()] #res.apply(lambda x: [x["segmentation"][0] - x1, x["segmentation"][1] - y1], axis=1)
     return res
@@ -157,6 +157,13 @@ def mp_execute_async(func, nprocesses, iterover, ifunc=None, fnargs=None):
         pool.close()
         pool.join()
     return async_results
+
+def unique_annotation_ids(annotations):
+    aid = [a["id"] for a in annotations]
+    if set(aid) != len(aid): #annotations are not unique
+        for i,_ in enumerate(annotations):
+            annotations[i]['id'] = i
+    return annotations
 
 def plot_image_catalog(image, annotations_json, bounding_boxes = True, segmentations = False, **kwargs):
     """Plot the image and the associated bounding boxes and/or segmentations on top for verification"""
