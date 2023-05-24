@@ -131,20 +131,6 @@ def pixvals_from_Skycoord(wcs, row):
     height = y2-y1
     return x1,y1,x2,y2,width, height
 
-# def pixvals_from_Skycoord(wcs, bottom_left_coord, top_right_coord):
-#     if np.isnan(bottom_left_coord.ra.value):
-#         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-#     x1, y1 = wcs.celestial.world_to_pixel(bottom_left_coord)
-#     x1 = int(np.round(x1,0))
-#     y1 = int(np.round(y1,0))
-#     x2, y2 = wcs.celestial.world_to_pixel(top_right_coord)
-#     x2 = int(np.round(x2,0))
-#     y2 = int(np.round(y2,0))
-#     x1, x2, y1,y2 = sorted_coords(x1,x2,y1,y2)
-#     width = x2-x1
-#     height = y2-y1
-#     return x1,y1,x2,y2,width, height
-
 def sky_ellipse_to_path(ra, dec, maj, minor, pa, wcs, units=[u.deg, u.deg, u.deg, u.deg], pix_offset=None):
     """Catalog values of a 2D ellipse to pixel mask"""
     if np.isnan(ra):
@@ -232,17 +218,17 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
 def single_async_prep(i,img_id, vals, segmentations, segmentation_fmt):
     val = vals[i]
     seg = segmentations[i]
-    iscrowd = check_overlap(segmentations)
+    iscrowd = check_overlap(segmentations) #this is really slow for big images! limit the check overlap area to within 20-30 px
     if segmentation_fmt == "[xyxy]":
         seg = segmentation_xyxy(seg)
     return i, img_id, iscrowd, val, seg
 
-def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs):
+def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs, crop_shape):
     cc = coordlist[i]
-    image_name = None
-    if wcs is None:
-        image_name = df["image_name"][i]
-    crop_shape = get_crop_shape(cc, wcs, image_name)
+    #image_name = None
+    #if wcs is None:
+    #    image_name = df["image_name"][i]
+    #crop_shape = get_crop_shape(cc, wcs, image_name)
     cdf = single_crop_catalog(df, cc, wcs)
     cdf.reset_index(inplace=True,drop=True)
     return i, crop_dir, prefix, start_imid, start_annid, crop_shape, cdf

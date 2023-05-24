@@ -124,15 +124,19 @@ def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, 
         bbox = bounding_box.values[0]
     else: 
         bbox = bounding_box
-    if not isinstance(segmentation, list): #it's a series
-        segmentation = segmentation.values.tolist() #[segmentation.values[0][0],segmentation.values[0][1]]
-        #print(type(segmentation), len(segmentation), segmentation[0])
+    if not instance(segmentation, pd.Series): #it's a series
+        segmentation = segmentation.values.tolist() 
+        if len(segmentation) == 1:
+            segmentation = [segmentation[0][0],segmentation[0][1]]
     #if segmentation_fmt == "[xyxy]":
-    #    segmentation = segmentation_xyxy(segmentation)
+    segmentation = segmentation_xyxy(segmentation)
     if not isinstance(iscrowd, list): #it's a series
         iscrowd = iscrowd.values[annotation_id]
     else: 
-        iscrowd = iscrowd[annotation_id]
+        try:
+            iscrowd = iscrowd[annotation_id]
+        except IndexError:
+            iscrowd = iscrowd[0]
 
     area = int(np.product(bbox[-2:]))
     annotation_info = {
@@ -177,7 +181,7 @@ def run_main(args): #for now
     keylist = [rakey, deckey, majkey, minkey, pakey]
 
     if args.test:
-        df = df.head(50) #for now
+        df = df.head(100) #for now
         
     df = catalog_coords_to_pix(df, wcs, keylist, bbox_fmt = args.bbox_fmt)
     #df = pd.read_csv("/home/glados/unix-Documents/AstroSignals/temp_df.csv", header=[0,1])
@@ -194,7 +198,7 @@ def run_main(args): #for now
         vals = df["source_bbox"]
         segmentations = df["segmentation"]
         async_results = mp_execute_async(create_annotation_info, 4, range(1,count), ifunc = single_async_prep, fnargs = [img_id, vals, segmentations, args.seg_fmt])
-    
+        #annotations = [create_annotation_info(*single_async_prep(i, img_id, vals, segmentations, args.seg_fmt)) for i in range(1,count)]
     else: 
         image_info=[]
         if not args.image:
@@ -205,10 +209,12 @@ def run_main(args): #for now
             #deal with this later
             print("not a SkyCoord")
         else:
-            async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs])
+            #get crop shape of first crop
+            crop_shape = get_crop_shape(coordlist[0], wcs, df["image_name"][0])
+            async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs, crop_shape])
 
     annotations = []
-    for async_result in async_results:
+    for async_result in async_results: #why is this slow?
         res = async_result.get()
         if args.crop_coords:
             image_info.append(res[0])
