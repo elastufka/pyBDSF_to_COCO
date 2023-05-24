@@ -256,6 +256,8 @@ def unique_annotation_ids(annotations):
             annotations[i]['id'] = i
     return annotations
 
+######### some useful functions #########
+
 def train_val_split(full_json, train_dir, val_dir, json_only=False, **kwargs):
     """do sklearn train_test_split, move images into the correct folders, and split the json"""
     with open(full_json) as f: 
@@ -361,3 +363,35 @@ def plot_image_catalog(image, annotations_json, bounding_boxes = True, segmentat
             ax.plot(segx,segy,'r')    
 
     return fig
+
+def combine_coco(jsondir, output_name, info = None, categories= None):
+    """Combine all annotations in one folder into a single COCO dataset"""
+    jj = glob.glob(os.path.join(jsondir,"*.json"))
+    ims = []
+    anns = []
+    for j in jj:
+        with open(j) as f:
+            dd = json.load(f)
+        ims.append(dd['images'])
+        anns.append(dd['annotations'])
+    try:
+        info = dd['info']
+    except KeyError:
+        info = create_info()
+    try:
+        categories = dd['categories']
+    except KeyError:
+        categories = create_categories("")
+
+    anns = unique_annotation_ids(anns)
+   
+    for k, (i,a) in enumerate(zip(ims,anns)):
+        i["id"] = k
+        a["image_id"] = k
+    
+    mdict = {"info":info,"images":ims,"annotations":anns,"categories":categories}    
+
+    with open(os.join(jsondir,output_name), 'w') as f: 
+        json.dump(mdict, f)
+
+        
