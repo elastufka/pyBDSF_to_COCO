@@ -57,18 +57,19 @@ def catalog_coords_to_pix(df, wcs, keylist, bbox_fmt = "xywh"):
 
     df["source_xmin"] = pixarr[:,0]
     df["source_ymin"] = pixarr[:,1]
-    if bbox_fmt == "xyxy":
-        df["source_xmax"] = pixarr[:,2]
-        df["source_ymax"] = pixarr[:,3]
-    else: 
-        df["source_xmax"] = pixarr[:,4]
-        df["source_ymax"] = pixarr[:,5]
+    #if bbox_fmt == "xyxy":
+    #    df["source_xmax"] = pixarr[:,2]
+    #    df["source_ymax"] = pixarr[:,3]
+    #else: 
+    #    df["source_xmax"] = pixarr[:,4]
+    #    df["source_ymax"] = pixarr[:,5]
     #df["source_width"] = pixarr[:,4]
     #df["source_height"] = pixarr[:,5]
-    df["source_bbox"] = df.apply(lambda x: pix_to_bbox(x.source_xmin,x.source_ymin, x.source_xmax, x.source_ymax), axis=1)
+    #df["source_bbox"] = df.apply(lambda x: pix_to_bbox(x.source_xmin,x.source_ymin, x.source_xmax, x.source_ymax), axis=1)
      
     #segmentation. adjust for sigma later
     df["segmentation"] = df.apply(lambda x: sky_ellipse_to_path(x[rakey]["DEG"],x[deckey]["DEG"],x[majkey]["DEG"],x[minkey]["DEG"],x[pakey]["DEG"], wcs), axis=1)
+    df["source_bbox"] = bbox_from_ellipse(df.segmentation)
     return df 
 
 def create_info(year = None, version = None, description = "", contributor = None, url="", date_created=None):
@@ -124,14 +125,13 @@ def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, 
         bbox = bounding_box.values[0]
     else: 
         bbox = bounding_box
-    if not instance(segmentation, pd.Series): #it's a series
+    if isinstance(segmentation, pd.Series): #it's a series
         segmentation = segmentation.values.tolist() 
         if len(segmentation) == 1:
             segmentation = [segmentation[0][0],segmentation[0][1]]
-    #if segmentation_fmt == "[xyxy]":
-    segmentation = segmentation_xyxy(segmentation)
-    if not isinstance(iscrowd, list): #it's a series
-        iscrowd = iscrowd.values[annotation_id]
+        segmentation = segmentation_xyxy(segmentation)
+    if isinstance(iscrowd, pd.Series): #it's a series
+        iscrowd = iscrowd.values[annotation_id] if len(iscrowd) > 1 else iscrowd.values[0]
     else: 
         try:
             iscrowd = iscrowd[annotation_id]
@@ -181,7 +181,7 @@ def run_main(args): #for now
     keylist = [rakey, deckey, majkey, minkey, pakey]
 
     if args.test:
-        df = df.head(100) #for now
+        df = df.sample(n=500).reset_index(drop=True) #for now
         
     df = catalog_coords_to_pix(df, wcs, keylist, bbox_fmt = args.bbox_fmt)
     #df = pd.read_csv("/home/glados/unix-Documents/AstroSignals/temp_df.csv", header=[0,1])
@@ -201,16 +201,16 @@ def run_main(args): #for now
         #annotations = [create_annotation_info(*single_async_prep(i, img_id, vals, segmentations, args.seg_fmt)) for i in range(1,count)]
     else: 
         image_info=[]
-        if not args.image:
-            coordlist = np.load(args.crop_coords, allow_pickle=True) #numpy array
-        else: 
+        if not args.image: 
             coordlist = df.image_name.values
+        else:
+            coordlist = np.load(args.crop_coords, allow_pickle=True) #numpy array
         if not isinstance(coordlist[0][0][0], SkyCoord):
             #deal with this later
             print("not a SkyCoord")
         else:
             #get crop shape of first crop
-            crop_shape = get_crop_shape(coordlist[0], wcs, df["image_name"][0])
+            crop_shape = get_crop_shape(coordlist[0], wcs)
             async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs, crop_shape])
 
     annotations = []

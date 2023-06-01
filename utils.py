@@ -12,6 +12,8 @@ from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
 import json
 from shapely.geometry import Polygon
+import glob
+import os
 
 def read_catalog(filename):
     """should this always return a multiindex dataframe?"""
@@ -55,7 +57,7 @@ def read_cat(filename):
     cat.columns = pd.MultiIndex.from_tuples([*zip(cat.columns, units)])
     return cat
 
-def read_csv_catalog(filename, skiprows=8):
+def read_csv_catalog(filename, skiprows=0):
     # for ascii, sep= " "
     return pd.read_csv(filename, skiprows=skiprows, header=[0,1])
 
@@ -97,14 +99,14 @@ def ra_dec_to_Skycoord(ra, dec, source_axis, fn = np.subtract):
     """Determine coordinate bottom-left or top-right"""
     return SkyCoord(fn(ra,source_axis/2)*u.deg, fn(dec,source_axis/2)*u.deg)
 
-def pix_to_bbox(xmin, ymin, width, height):
-    """pixel coords to int to COCO bounding box format. input is dataframe row (Series)"""
-    bbox = []
-    if np.isnan(xmin.values[0]):
-        return [np.nan, np.nan, np.nan, np.nan]
-    for x in [xmin, ymin, width, height]:
-        bbox.append(int(x.values[0]))
-    return bbox
+# def pix_to_bbox(xmin, ymin, width, height):
+#     """pixel coords to int to COCO bounding box format. input is dataframe row (Series)"""
+#     bbox = []
+#     if np.isnan(xmin.values[0]):
+#         return [np.nan, np.nan, np.nan, np.nan]
+#     for x in [xmin, ymin, width, height]:
+#         bbox.append(int(x.values[0]))
+#     return bbox
 
 def sorted_coords(x1,x2,y1,y2):
     """sort bottom-left and top right coords"""
@@ -112,9 +114,15 @@ def sorted_coords(x1,x2,y1,y2):
     y1, y2 = min([y1,y2]), max([y1,y2])
     return x1,x2,y1,y2
 
-def pixvals_from_Skycoord(wcs, row):
-    blc = row.bottom_left_coord.values[0]
-    trc = row.top_right_coord.values[0]
+def pixvals_from_Skycoord(wcs, blc, trc = None):
+    if not trc: 
+        row = blc    
+        try:
+            blc = row.bottom_left_coord.values[0]
+            trc = row.top_right_coord.values[0]
+        except AttributeError:
+            blc = row.bottom_left_coord
+            trc = row.top_right_coord
     if np.isnan(blc.ra.value):
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     if wcs is None:
@@ -155,10 +163,20 @@ def path_from_patch(patch):
     #from https://github.com/facebookresearch/Detectron/issues/100
     return vertices.T.tolist() #hope this doesn't have to be int #replace .T
 
-def get_crop_shape(example_crop_coords, wcs, image_name = None):
-    row = pd.DataFrame({"bottom_left_coord":example_crop_coords[0][0], "top_right_coord":example_crop_coords[0][0], "image_name": image_name})
-    _,_,_,_,w,h = pixvals_from_Skycoord(wcs, row[0])
-    return w,h
+def bbox_from_ellipse(segseries):
+    """Calculate the bounding box given the segmentations"""
+    #segmentation is in [[x],[y]] format
+    bboxes = []
+    for _, seg in segseries.items():
+        minx, miny = np.rint(np.min(seg[0])), np.rint(np.min(seg[1])) 
+        width, height = np.ceil(np.ptp(seg[0])), np.ceil(np.ptp(seg[1])) #round up 
+        bboxes.append([int(minx), int(miny), int(width), int(height)])
+    return bboxes
+
+def get_crop_shape(example_crop_coords, wcs):
+    #row = pd.DataFrame({"bottom_left_coord":, "top_right_coord":example_crop_coords[0][0]}, index=[0])
+        _,_,_,_,w,h = pixvals_from_Skycoord(wcs, example_crop_coords[0][0], example_crop_coords[1][0])
+        return w,h
 
 def adjust_bbox_pixvals(bbox, xmin, ymin):
     if len(bbox) == 1:
@@ -191,6 +209,35 @@ def check_overlap(segs):
                 iscrowd[k] = 1
     return iscrowd.tolist()
 
+def create_info(year = None, version = None, description = "", contributor = None, url="", date_created=None):
+    if not year:
+        year = dt.now().year
+    if not contributor:
+        try:
+            contributor = os.environ["USER"]
+        except KeyError:
+            contributor = ""
+    if not date_created:
+        date_created = Time(dt.now()).isot
+    info = {"year": year,
+            "version": version,
+            "description": description,
+            "contributer": contributor,
+            "url": url,
+            "date_created": date_created}
+    return info
+
+def create_categories(names):
+    if isinstance(names, str):
+        if names.endswith('.csv'):
+            cats = pd.read_csv(names) #need to get the values...
+        else: 
+            cats = names.split(',')
+    categories = []
+    for i, n in enumerate(cats):
+        categories.append({"id":i+1,"name":n,"supercategory":""})
+    return categories
+
 def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
     """Return catalog information for a single crop"""
     if wcs is None:
@@ -206,12 +253,14 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
         res = dd.where(dd[deckey].DEG > min((bldec,trdec))).where(dd[deckey].DEG < max((bldec,trdec))).dropna(how='all')
         #shift all pixel coordinates relative to crop position in primary image
         x1,y1,_,_,_,_ = pixvals_from_Skycoord(wcs, bl, tr)
-        res["source_xmin"] -= x1
-        res["source_ymin"] -= y1
+        #print(x1,y1)
+        #print(res.source_bbox.head())
+        res["source_xmin"] -= x1 #flip for test
+        res["source_ymin"] -= y1 #flip for test
         res["source_bbox"] = [adjust_bbox_pixvals(row.source_bbox, x1,y1) for _,row in res.iterrows()]
         #res.apply(lambda x: adjust_bbox_pixvals(x["source_bbox"], x1,y1), axis=1)
         res["segmentation"] = [adjust_segmentation_pixvals(row.segmentation.values[0],x1,y1) for _,row in res.iterrows()] #res.apply(lambda x: [x["segmentation"][0] - x1, x["segmentation"][1] - y1], axis=1)
-    
+        #print(res.source_bbox.head())
     res["iscrowd"] = check_overlap(res["segmentation"])
     return res
 
@@ -364,16 +413,27 @@ def plot_image_catalog(image, annotations_json, bounding_boxes = True, segmentat
 
     return fig
 
+def reset_image_id(ann, id_offset):
+    ann["image_id"] = ann["image_id"]+ id_offset
+    return ann
+
 def combine_coco(jsondir, output_name, info = None, categories= None):
-    """Combine all annotations in one folder into a single COCO dataset"""
+    """Combine all annotations in one folder into a single COCO dataset. Slow right now."""
     jj = glob.glob(os.path.join(jsondir,"*.json"))
     ims = []
     anns = []
+    imid = 0
     for j in jj:
         with open(j) as f:
             dd = json.load(f)
-        ims.append(dd['images'])
-        anns.append(dd['annotations'])
+
+        imlist = [i for i in dd['images']]
+        annlist = [reset_image_id(a,imid) for a in dd['annotations']]
+        imid += len(imlist)
+        
+        ims.extend(imlist)
+        anns.extend(annlist)
+
     try:
         info = dd['info']
     except KeyError:
@@ -381,17 +441,20 @@ def combine_coco(jsondir, output_name, info = None, categories= None):
     try:
         categories = dd['categories']
     except KeyError:
-        categories = create_categories("")
+        categories = create_categories("source")
 
-    anns = unique_annotation_ids(anns)
-   
-    for k, (i,a) in enumerate(zip(ims,anns)):
-        i["id"] = k
-        a["image_id"] = k
+    idf = pd.DataFrame.from_records(ims).reset_index(drop=True)
+    adf = pd.DataFrame.from_records(anns).reset_index(drop=True)
     
-    mdict = {"info":info,"images":ims,"annotations":anns,"categories":categories}    
+    idf["id"] = idf.index.values.tolist()
+    adf["id"] = adf.index.values.tolist() #this way they are all unique
 
-    with open(os.join(jsondir,output_name), 'w') as f: 
+    flat_anns = adf.to_dict(orient='records')
+    flat_ims = idf.to_dict(orient='records')
+
+    mdict = {"info":info,"images":flat_ims,"annotations":flat_anns,"categories":categories}    
+
+    with open(os.path.join(jsondir,output_name), 'w') as f: 
         json.dump(mdict, f)
 
         
