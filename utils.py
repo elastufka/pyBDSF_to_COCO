@@ -4,6 +4,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
 from astropy import units as u
 from photutils.aperture import SkyEllipticalAperture
 from matplotlib import pyplot as plt
@@ -14,6 +15,7 @@ import json
 from shapely.geometry import Polygon
 import glob
 import os
+from datetime import datetime as dt
 
 def read_catalog(filename):
     """should this always return a multiindex dataframe?"""
