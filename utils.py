@@ -318,7 +318,7 @@ def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','hei
         if not json_only:
             try:
                 imn = imfile.file_name.values[0]
-                imn.replace("corcrop","cor_crop")
+                imn = imn.replace("corcrop","cor_crop")
                 shutil.move(imn, destination)
             except Exception as e: 
                 print(f"could not move {imn}")
