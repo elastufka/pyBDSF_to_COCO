@@ -309,6 +309,28 @@ def unique_annotation_ids(annotations):
 
 ######### some useful functions #########
 
+def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','height'], akeys = ['id','image_id','iscrowd','category_id']), json_only = False:
+    all_ims, all_anns = [],[]
+    for x in indices:
+        imfile = idf.where(idf.id == x).dropna(how='all')
+        for k in ikeys:
+            imfile[k] = imfile[k].astype(int)
+        if not json_only:
+            try:
+                imn = imfile.file_name.values[0]
+                imn.replace("corcrop","cor_crop")
+                shutil.move(imfile.file_name.values[0], destination)
+            except Exception as e: 
+                print(f"could not move {imfile.file_name.values[0]}")
+        #adjust imfile name
+        imfile['file_name'] = [f[f.rfind("/")+1:] for f in imfile['file_name']]
+        anns = adf.where(adf.image_id == x).dropna(how='all')
+        for k in akeys:
+            anns[k] = anns[k].astype(int)
+        all_ims.extend(imfile.to_dict(orient='records'))
+        all_anns.extend(anns.to_dict(orient='records'))
+        return all_ims, all_anns
+
 def train_val_split(full_json, train_dir, val_dir, json_only=False, **kwargs):
     """do sklearn train_test_split, move images into the correct folders, and split the json"""
     with open(full_json) as f: 
@@ -319,40 +341,25 @@ def train_val_split(full_json, train_dir, val_dir, json_only=False, **kwargs):
     idf = pd.DataFrame(sdict["images"])
     adf = pd.DataFrame(sdict["annotations"])
     X_train,X_val = train_test_split(idf.id.values, **kwargs)
+    print(f"Splitting dataset into {len(X_train)} training samples in {train_dir} and {len(X_val)} test samples in {val_dir}")
+    trainims, trainanns = move_COCO_samples(idf, adf, X_train, train_dir, json_only = json_only)
+    valims, valanns = move_COCO_samples(idf, adf, X_val, val_dir, json_only = json_only)
 
-    trainims, trainanns = [],[]
-    valims, valanns = [],[]
-    akeys = ['id','image_id','iscrowd','category_id']
-    ikeys = ['id','width','height']
-    #move images
-    for x in X_train:
-        imfile = idf.where(idf.id == x).dropna(how='all')
-        for k in ikeys:
-            imfile[k] = imfile[k].astype(int)
-        if not json_only:
-            shutil.move(imfile.file_name.values[0], train_dir)
-        #adjust imfile name
-        imfile['file_name'] = [f[f.rfind("/")+1:] for f in imfile['file_name']]
-        trainims.extend(imfile.to_dict(orient='records'))
-        anns = adf.where(adf.image_id == x).dropna(how='all')
-        for k in akeys:
-            anns[k] = anns[k].astype(int)
-        trainanns.extend(anns.to_dict(orient='records'))
-        
-
-    for x in X_val:
-        imfile = idf.where(idf.id == x).dropna(how='all')
-        for k in ikeys:
-            imfile[k] = imfile[k].astype(int)
-        if not json_only:
-            shutil.move(imfile.file_name.values[0], val_dir)
-        imfile['file_name'] = [f[f.rfind("/")+1:] for f in imfile['file_name']]
-        valims.extend(imfile.to_dict(orient='records'))
-        anns = adf.where(adf.image_id == x).dropna(how='all')
-        for k in akeys:
-            anns[k] = anns[k].astype(int)
-        valanns.extend(anns.to_dict(orient='records'))
-
+    # for x in X_val:
+    #     imfile = idf.where(idf.id == x).dropna(how='all')
+    #     for k in ikeys:
+    #         imfile[k] = imfile[k].astype(int)
+    #     if not json_only:
+    #         try:
+    #             shutil.move(imfile.file_name.values[0], val_dir)
+    #         except Exception as e: 
+    #             print(f"could not move {imfile.file_name.values[0]}")
+    #     imfile['file_name'] = [f[f.rfind("/")+1:] for f in imfile['file_name']]
+    #     valims.extend(imfile.to_dict(orient='records'))
+    #     anns = adf.where(adf.image_id == x).dropna(how='all')
+    #     for k in akeys:
+    #         anns[k] = anns[k].astype(int)
+    #     valanns.extend(anns.to_dict(orient='records'))
 
     #split JSON
     traininfo = sdict['info'].copy()
