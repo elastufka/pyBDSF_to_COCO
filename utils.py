@@ -309,7 +309,7 @@ def unique_annotation_ids(annotations):
 
 ######### some useful functions #########
 
-def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','height'], akeys = ['id','image_id','iscrowd','category_id']), json_only = False:
+def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','height'], akeys = ['id','image_id','iscrowd','category_id'], json_only = False):
     all_ims, all_anns = [],[]
     for x in indices:
         imfile = idf.where(idf.id == x).dropna(how='all')
@@ -319,9 +319,9 @@ def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','hei
             try:
                 imn = imfile.file_name.values[0]
                 imn.replace("corcrop","cor_crop")
-                shutil.move(imfile.file_name.values[0], destination)
+                shutil.move(imn, destination)
             except Exception as e: 
-                print(f"could not move {imfile.file_name.values[0]}")
+                print(f"could not move {imn}")
         #adjust imfile name
         imfile['file_name'] = [f[f.rfind("/")+1:] for f in imfile['file_name']]
         anns = adf.where(adf.image_id == x).dropna(how='all')
@@ -329,7 +329,7 @@ def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','hei
             anns[k] = anns[k].astype(int)
         all_ims.extend(imfile.to_dict(orient='records'))
         all_anns.extend(anns.to_dict(orient='records'))
-        return all_ims, all_anns
+    return all_ims, all_anns
 
 def train_val_split(full_json, train_dir, val_dir, json_only=False, **kwargs):
     """do sklearn train_test_split, move images into the correct folders, and split the json"""
