@@ -3,7 +3,6 @@
 Convert a source catalog written by [PyBDSF](https://pybdsf.readthedocs.io) to [COCO](https://cocodataset.org/#home) dataset format. WCS coordinates used in PyBDSF catalogs will be converted to pixel values.
 
 Current limitations:
-- Bounding boxes are currently based on source major axis, not on segmentation
 - segmentation is determined from ellipse shape with no uncertainties accounted for
 - If images are a list of crops, the image shape defaults to shape of first crop
 
@@ -54,8 +53,6 @@ plot_image_catalog("image.fits", "annotations_json", bounding_boxes = True, segm
 
 ## Example output
 
-Two sources from a crop of the COSMOS image
-
 ```json
 {"info": {"year": 2023, "version": "", "description": "test data", "contributer": "yours truly", "url": "https://www.mydata.org", "date_created": "2023-05-01T13:44:18.356"}, 
 "images": [{"id": 0, "file_name": "test_image.npy", "width": 4096, "height": 4096, "date_captured": "2023-05-01T13:53:07.536", "license": 1.0, "coco_url": "", "flickr_url": ""}],
@@ -70,5 +67,5 @@ Two sources from a crop of the COSMOS image
 Make sure all JSON files are in the same directory.
 
 ```python
-combine_coco("/path/to/my/dir")
+combine_coco("/path/to/my/dir", "my_dataset_annotations.json")
 ```

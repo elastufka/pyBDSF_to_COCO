@@ -197,19 +197,40 @@ def segmentation_xyxy(segmentation):
         m2.append(y)
     return [m2]
 
-def check_overlap(segs):
-    """check if any segmentations in a single crop/image overlap"""
+def get_bbox_center(b):
+    return b[0] + b[-1]/2, b[1] + b[2]/2
+
+def check_overlap(bboxes, segs, extent=50):
+    """check if any segmentations in a single crop/image overlap. should be faster now"""
     iscrowd = np.zeros(len(segs)).astype(int)
     #use shapely Polygon
-    polygons = [Polygon(np.array(s).T) for s in segs] #replace .T
+    #polygons = [Polygon(np.array(s).T) for s in segs] #replace .T
 
-    for i,p in enumerate(polygons):
+    for i,(b,s) in enumerate(zip(bboxes, segs)):
+        #get sources within extent of b
+        cx,cy = get_bbox_center(b)
+        source_indices = sources_within_extent(bboxes,cx,cy, extent=extent)
+        source_indices.remove(i) #that's the input box
+
+        subsegs = segs[source_indices]
+        p = Polygon(np.array(s).T)
+        polygons = [Polygon(np.array(s).T) for s in subsegs] #these should just be the ones close to the box 
         inter = [j for j,p2 in enumerate(polygons) if i !=j and p.intersects(p2)]
         if inter != []:
             for k in inter:
                 #smallcat.append({"image_id":n,"bbox":jdf.bbox[k],"segmentation":jdf.segmentation[k]})
                 iscrowd[k] = 1
     return iscrowd.tolist()
+
+def sources_within_extent(boxes, cx, cy, extent=50):
+    """return indices of boxes that exist within a given extent x extent area"""
+    boxx = np.array([b[0] for b in boxes]) #sort by x lower
+    boxy = np.array([b[1] for b in boxes])
+    #source_indices = []
+    xin = np.intersect1d(np.where(boxx > cx - extent/2), np.where(boxx < cx + extent/2))
+    yin = np.intersect1d(np.where(boxy > cy - extent/2), np.where(boxy < cy + extent/2))
+    source_indices = np.intersect1d(xin,yin)   
+    return list(source_indices)
 
 def create_info(year = None, version = None, description = "", contributor = None, url="", date_created=None):
     if not year:
@@ -263,7 +284,7 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
         #res.apply(lambda x: adjust_bbox_pixvals(x["source_bbox"], x1,y1), axis=1)
         res["segmentation"] = [adjust_segmentation_pixvals(row.segmentation.values[0],x1,y1) for _,row in res.iterrows()] #res.apply(lambda x: [x["segmentation"][0] - x1, x["segmentation"][1] - y1], axis=1)
         #print(res.source_bbox.head())
-    res["iscrowd"] = check_overlap(res["segmentation"])
+    res["iscrowd"] = check_overlap(res["source_bbox"],res["segmentation"])
     return res
 
 def single_async_prep(i,img_id, vals, segmentations, segmentation_fmt):
@@ -321,7 +342,7 @@ def move_COCO_samples(idf, adf, indices, destination, ikeys = ['id','width','hei
                 imn = imn.replace("corcrop","cor_crop")
                 shutil.move(imn, destination)
             except Exception as e: 
-                print(f"could not move {imn}")
+                print(f"could not move {imn} to {destination}")
         #adjust imfile name
         imfile['file_name'] = [f[f.rfind("/")+1:] for f in imfile['file_name']]
         anns = adf.where(adf.image_id == x).dropna(how='all')
@@ -387,10 +408,10 @@ def plot_image_catalog(image, annotations_json, bounding_boxes = True, segmentat
         crop_number = int(image[image.rfind("_")+1:image.rfind(".")])
     if isinstance(annotations_json, list): #it's already the dict item
         jdf = pd.DataFrame(annotations_json)
-        try:
-            jdf = jdf.where(jdf.image_id == crop_number).dropna(how='all')
-        except UnboundLocalError:
-            pass
+        #try:
+        #    jdf = jdf.where(jdf.image_id == crop_number).dropna(how='all')
+        #except UnboundLocalError:
+        #    pass
     else:
         with open(annotations_json) as f:
             data = json.load(f)
