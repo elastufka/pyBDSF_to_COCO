@@ -210,8 +210,9 @@ def check_overlap(bboxes, segs, extent=50):
         #get sources within extent of b
         cx,cy = get_bbox_center(b)
         source_indices = sources_within_extent(bboxes,cx,cy, extent=extent)
-        source_indices.remove(i) #that's the input box
-
+        if len(source_indices) == 0:
+            continue
+        source_indices.remove(i) #that's the input box - is the index still correct?
         subsegs = segs[source_indices]
         p = Polygon(np.array(s).T)
         polygons = [Polygon(np.array(s).T) for s in subsegs] #these should just be the ones close to the box 
