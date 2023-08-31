@@ -16,6 +16,7 @@ from shapely.geometry import Polygon
 import glob
 import os
 from datetime import datetime as dt
+import shutil
 
 def read_catalog(filename):
     """should this always return a multiindex dataframe?"""
@@ -38,10 +39,23 @@ def read_FITS_catalog(filename):
     cat = tab.to_pandas()
 
     #unit conversions, renaming columns, multiindex
-    cat['smax_asec'] = [float(row.smax_asec)*u.arcsec.to(u.deg) for _, row in cat.iterrows()] 
-    cat['smin_asec'] = [float(row.smin_asec)*u.arcsec.to(u.deg) for _, row in cat.iterrows()]
-    cat.rename(columns={"RA_deg":"RA","Dec_deg":"DEC","smax_asec":"Maj","smin_asec":"Min","spa_deg":"PA"}, inplace=True)
-    units=["DEG","DEG","Jy","","","DEG","DEG","DEG"]
+    units = []
+    for c in cat.columns:
+        if c.endswith('asec'): #convert to degrees
+            cat[c] = [float(row[c])*u.arcsec.to(u.deg) for _, row in cat.iterrows()] 
+            units.append('DEG')
+        elif 'mJy' in c[-5:]:
+            units.append(c[c.rfind('m'):])
+        elif 'RA' in c or 'DEC' in c: 
+            units.append('DEG')
+        else: 
+            units.append('')
+
+    #keymap should take care of this now
+    #cat['smax_asec'] = [float(row.smax_asec)*u.arcsec.to(u.deg) for _, row in cat.iterrows()] 
+    #cat['smin_asec'] = [float(row.smin_asec)*u.arcsec.to(u.deg) for _, row in cat.iterrows()]
+    #cat.rename(columns={"RA_deg":"RA","Dec_deg":"DEC","smax_asec":"Maj","smin_asec":"Min","spa_deg":"PA"}, inplace=True)
+    #units=["DEG","DEG","Jy","","","DEG","DEG","DEG"]
     cat.columns = pd.MultiIndex.from_tuples([*zip(cat.columns, units)])
 
     return cat
@@ -210,9 +224,11 @@ def check_overlap(bboxes, segs, extent=50):
         #get sources within extent of b
         cx,cy = get_bbox_center(b)
         source_indices = sources_within_extent(bboxes,cx,cy, extent=extent)
-        source_indices.remove(i) #that's the input box
-
+        if len(source_indices) == 1:
+            continue
+        source_indices.remove(i) #that's the input box - is the index still correct?
         subsegs = segs[source_indices]
+        #print(f"{i} checking {len(subsegs)} for overlap")
         p = Polygon(np.array(s).T)
         polygons = [Polygon(np.array(s).T) for s in subsegs] #these should just be the ones close to the box 
         inter = [j for j,p2 in enumerate(polygons) if i !=j and p.intersects(p2)]
@@ -284,24 +300,29 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
         #res.apply(lambda x: adjust_bbox_pixvals(x["source_bbox"], x1,y1), axis=1)
         res["segmentation"] = [adjust_segmentation_pixvals(row.segmentation.values[0],x1,y1) for _,row in res.iterrows()] #res.apply(lambda x: [x["segmentation"][0] - x1, x["segmentation"][1] - y1], axis=1)
         #print(res.source_bbox.head())
-    res["iscrowd"] = check_overlap(res["source_bbox"],res["segmentation"])
+    res["iscrowd"] = check_overlap(res["source_bbox"],res["segmentation"]) #np.zeros_like(res.source_xmin) 
     return res
 
-def single_async_prep(i,img_id, vals, segmentations, segmentation_fmt):
-    val = vals[i]
+def single_async_prep(i,img_id, vals, segmentations, iscrowd, segmentation_fmt):
+    val = vals[i] #bounding boxes
     seg = segmentations[i]
-    iscrowd = check_overlap(segmentations) #this is really slow for big images! limit the check overlap area to within 20-30 px
+    ic = iscrowd[i]
+    #print(ic)
+    #tt = dt.now()
+    #iscrowd = check_overlap(val, segmentations) #this is really slow for big images! limit the check overlap area to within 20-30 px
+    #print(f"check overlap took {dt.now() - tt} for {len(seg)} segmentations")
+    #print(len(iscrowd))
     if segmentation_fmt == "[xyxy]":
         seg = segmentation_xyxy(seg)
-    return i, img_id, iscrowd, val, seg
+    return i, img_id, ic, val, seg #remove ic
 
-def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs, crop_shape):
+def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs, crop_shape, keylist):
     cc = coordlist[i]
     #image_name = None
     #if wcs is None:
     #    image_name = df["image_name"][i]
     #crop_shape = get_crop_shape(cc, wcs, image_name)
-    cdf = single_crop_catalog(df, cc, wcs)
+    cdf = single_crop_catalog(df, cc, wcs, rakey = keylist[0], deckey = keylist[1])
     cdf.reset_index(inplace=True,drop=True)
     return i, crop_dir, prefix, start_imid, start_annid, crop_shape, cdf
 

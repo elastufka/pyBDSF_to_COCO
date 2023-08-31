@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--image", "../data/MGCLS_data/basic/Abell_S295.1pln.fits", "--no_PA","True","--catalog","../data/MGCLS_data/catalogs/Table3_MGCLS_optx_AS295.fits","--output_file","../data/MGCLS_data/basic/Abell_S295_optx_annotations.json","--category_names","DECaLS source","--keymap","../data/MGCLS_data/basic/DECaLS_keymap.json"]
+        }]
+}

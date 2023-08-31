@@ -20,6 +20,7 @@ def get_args_parser():
     parser.add_argument('--start_imid', default=0, type=int, help="""Index at which to start Image IDs. Useful if dataset will contain multiple images.""")
     parser.add_argument('--start_annid', default=0, type=int, help="""Index at which to start annotation IDs. Useful if dataset will contain multiple images.""")
     parser.add_argument('--test', default=False, type=bool, help="""test""")
+    parser.add_argument('--no_PA', default=False, type=bool, help="""if no PA information, use PA=0""")
 
     #formatting args
     parser.add_argument('--bbox_fmt', default="xywh", type=str, help="""Bounding box format: xywh (x0,y0,width,height) or xyxy (x0,y0,x1,y1)""")
@@ -45,6 +46,8 @@ def get_args_parser():
 def catalog_coords_to_pix(df, wcs, keylist, bbox_fmt = "xywh"):
     """Convert coordinates in catalog from world to pixel. Rather slow for 10K rows right now, can try terality to speed up."""
     rakey, deckey, majkey, minkey, pakey = keylist
+    if pakey not in df.keys():
+        df[pakey,'DEG'] = 0
     
     if not wcs:
         #get the wcs from each individual fits file... this will probably be slow
@@ -71,35 +74,6 @@ def catalog_coords_to_pix(df, wcs, keylist, bbox_fmt = "xywh"):
     df["segmentation"] = df.apply(lambda x: sky_ellipse_to_path(x[rakey]["DEG"],x[deckey]["DEG"],x[majkey]["DEG"],x[minkey]["DEG"],x[pakey]["DEG"], wcs), axis=1)
     df["source_bbox"] = bbox_from_ellipse(df.segmentation)
     return df 
-
-def create_info(year = None, version = None, description = "", contributor = None, url="", date_created=None):
-    if not year:
-        year = dt.now().year
-    if not contributor:
-        try:
-            contributor = os.environ["USER"]
-        except KeyError:
-            contributor = ""
-    if not date_created:
-        date_created = Time(dt.now()).isot
-    info = {"year": year,
-            "version": version,
-            "description": description,
-            "contributer": contributor,
-            "url": url,
-            "date_created": date_created}
-    return info
-
-def create_categories(names):
-    if isinstance(names, str):
-        if names.endswith('.csv'):
-            cats = pd.read_csv(names) #need to get the values...
-        else: 
-            cats = names.split(',')
-    categories = []
-    for i, n in enumerate(cats):
-        categories.append({"id":i+1,"name":n,"supercategory":""})
-    return categories
 
 def create_image_info(image_id, file_name, image_size, license_id=1, coco_url="", flickr_url=""):
     """from https://github.com/waspinator/pycococreator/blob/master/pycococreatortools/pycococreatortools.py"""
@@ -132,7 +106,7 @@ def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, 
         segmentation = segmentation_xyxy(segmentation)
     if isinstance(iscrowd, pd.Series): #it's a series
         iscrowd = iscrowd.values[annotation_id] if len(iscrowd) > 1 else iscrowd.values[0]
-    else: 
+    elif not isinstance(iscrowd, int): 
         try:
             iscrowd = iscrowd[annotation_id]
         except IndexError:
@@ -197,7 +171,9 @@ def run_main(args): #for now
         count = len(df)
         vals = df["source_bbox"]
         segmentations = df["segmentation"]
-        async_results = mp_execute_async(create_annotation_info, 4, range(1,count), ifunc = single_async_prep, fnargs = [img_id, vals, segmentations, args.seg_fmt])
+        iscrowd = check_overlap(vals, segmentations) 
+        #print(count, len(vals), len(segmentations), len(iscrowd), type(iscrowd))
+        async_results = mp_execute_async(create_annotation_info, 4, range(1,count), ifunc = single_async_prep, fnargs = [img_id, vals, segmentations, iscrowd, args.seg_fmt])
         #annotations = [create_annotation_info(*single_async_prep(i, img_id, vals, segmentations, args.seg_fmt)) for i in range(1,count)]
     else: 
         image_info=[]
@@ -211,7 +187,7 @@ def run_main(args): #for now
         else:
             #get crop shape of first crop
             crop_shape = get_crop_shape(coordlist[0], wcs)
-            async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs, crop_shape])
+            async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs, crop_shape, keylist])
 
     annotations = []
     for async_result in async_results: #why is this slow?
@@ -229,6 +205,7 @@ def run_main(args): #for now
         mdict = {"images":image_info,"annotations":annotations}
     with open(args.output_file, 'w') as f: 
         json.dump(mdict, f)
+    print(f"{len(annotations)} COCO annotations for {len(image_info)} images written to {args.output_file}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('pyBDSF_to_COCO', parents=[get_args_parser()])
