@@ -231,10 +231,9 @@ def check_overlap(bboxes, segs, extent=50):
         #get sources within extent of b
         cx,cy = get_bbox_center(b)
         source_indices = sources_within_extent(bboxes,cx,cy, extent=extent)
-        if i in source_indices:
-            source_indices.remove(i) #that's the input box - is the index still correct?
         if len(source_indices) == 0:
-            continue 
+            continue
+        source_indices.remove(i) #that's the input box - is the index still correct?
         subsegs = segs[source_indices]
         #print(f"{i} checking {len(subsegs)} for overlap")
         p = Polygon(np.array(s).T)
