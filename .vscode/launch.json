@@ -8,6 +8,12 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["--image", "../data/MGCLS_data/basic/Abell_S295.1pln.fits", "--no_PA","True","--catalog","../data/MGCLS_data/catalogs/Table3_MGCLS_optx_AS295.fits","--output_file","../data/MGCLS_data/basic/Abell_S295_optx_annotations.json","--category_names","DECaLS source","--keymap","../data/MGCLS_data/basic/DECaLS_keymap.json"]
-        }]
+            "args":["--image", "../data/MGCLS_data/enhanced/FITS/Abell_2667_noFix_pol_I_Farcsec_5pln_cor.fits",
+                "--catalog","../data/MGCLS_data/enhanced/Abell_2667_compact_source_catalog.csv",
+                "--output_file","../data/MGCLS_data/enhanced/Abell_2667_noFix_pol_I_Farcsec_5pln_cor_annotations.json",
+                "--crop_coords","../data/Abell_2667_noFix_pol_I_Farcsec_5pln_cor_coords.npy",
+                "--crop_prefix","../data/Abell_2667_noFix_pol_I_Farcsec_5pln_cor_",
+                "--category_names","source",
+                "--transpose"]
+                }]
 }
