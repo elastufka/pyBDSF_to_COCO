@@ -19,8 +19,9 @@ def get_args_parser():
     parser.add_argument('--crop_prefix', type=str, help="""Prefix to use for crop names in front of crop_n.npy or crop_n.fits""")
     parser.add_argument('--start_imid', default=0, type=int, help="""Index at which to start Image IDs. Useful if dataset will contain multiple images.""")
     parser.add_argument('--start_annid', default=0, type=int, help="""Index at which to start annotation IDs. Useful if dataset will contain multiple images.""")
-    parser.add_argument('--test', default=False, type=bool, help="""test""")
+    parser.add_argument('--test', action='store_true', help="""test""")
     parser.add_argument('--no_PA', default=False, type=bool, help="""if no PA information, use PA=0""")
+    parser.add_argument('--transpose', action='store_true', help="""transpose x,y""")
 
     #formatting args
     parser.add_argument('--bbox_fmt', default="xywh", type=str, help="""Bounding box format: xywh (x0,y0,width,height) or xyxy (x0,y0,x1,y1)""")
@@ -113,6 +114,8 @@ def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, 
             iscrowd = iscrowd[0]
 
     area = int(np.product(bbox[-2:]))
+
+    #option to keep original catalog parameters too! in pixel coords probably
     annotation_info = {
         "id": annotation_id,
         "image_id": image_id,
@@ -123,6 +126,19 @@ def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, 
         "segmentation": segmentation
     } 
     return annotation_info
+
+def create_astro_info(majpx, minpx, PA):
+    #option to keep original catalog parameters too! in pixel coords probably
+    #ellipticity = #formula
+    astro_info = {
+        "Maj": majpx,
+        "Min": minpx,
+        "PA": PA,
+        #"ellipticity": ellipticity,
+        "area": area, #scode? not all catalgos have this
+        #spectral index
+    } 
+    return astro_info
 
 def create_crop_info(i, image, prefix, start_imid, start_annid, crop_shape, cdf):
     #image = image[:image.rfind("/")]
@@ -181,13 +197,13 @@ def run_main(args): #for now
             coordlist = df.image_name.values
         else:
             coordlist = np.load(args.crop_coords, allow_pickle=True) #numpy array
-        if not isinstance(coordlist[0][0][0], SkyCoord):
-            #deal with this later
-            print("not a SkyCoord")
-        else:
-            #get crop shape of first crop
-            crop_shape = get_crop_shape(coordlist[0], wcs)
-            async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs, crop_shape, keylist])
+        #if not isinstance(coordlist[0][0][0], SkyCoord):
+        #    #deal with this later
+        #    print("not a SkyCoord")
+        #else:
+        #get crop shape of first crop
+        crop_shape = get_crop_shape(coordlist[0], wcs)
+        async_results = mp_execute_async(create_crop_info, 4, coordlist, ifunc = crop_async_prep, fnargs = [coordlist, args.image, args.crop_prefix, args.start_imid, args.start_annid, df, wcs, crop_shape, keylist, args.transpose])
 
     annotations = []
     for async_result in async_results: #why is this slow?

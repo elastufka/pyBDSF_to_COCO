@@ -184,13 +184,20 @@ def bbox_from_ellipse(segseries):
     #segmentation is in [[x],[y]] format
     bboxes = []
     for _, seg in segseries.items():
-        minx, miny = np.rint(np.min(seg[0])), np.rint(np.min(seg[1])) 
-        width, height = np.ceil(np.ptp(seg[0])), np.ceil(np.ptp(seg[1])) #round up 
-        bboxes.append([int(minx), int(miny), int(width), int(height)])
+        if seg is None:
+            bboxes.append([])
+        else:
+            minx, miny = np.rint(np.min(seg[0])), np.rint(np.min(seg[1])) 
+            width, height = np.ceil(np.ptp(seg[0])), np.ceil(np.ptp(seg[1])) #round up 
+            bboxes.append([int(minx), int(miny), int(width), int(height)])
     return bboxes
 
 def get_crop_shape(example_crop_coords, wcs):
     #row = pd.DataFrame({"bottom_left_coord":, "top_right_coord":example_crop_coords[0][0]}, index=[0])
+        #if not isinstance(example_crop_coords[0], SkyCoord):
+        #    wh = example_crop_coords[1] - example_crop_coords[0]
+        #    #print(wh)
+        #    return wh[0],wh[1]
         _,_,_,_,w,h = pixvals_from_Skycoord(wcs, example_crop_coords[0][0], example_crop_coords[1][0])
         return w,h
 
@@ -219,14 +226,15 @@ def check_overlap(bboxes, segs, extent=50):
     iscrowd = np.zeros(len(segs)).astype(int)
     #use shapely Polygon
     #polygons = [Polygon(np.array(s).T) for s in segs] #replace .T
-
+    segs.reset_index(drop=True, inplace=True)
     for i,(b,s) in enumerate(zip(bboxes, segs)):
         #get sources within extent of b
         cx,cy = get_bbox_center(b)
         source_indices = sources_within_extent(bboxes,cx,cy, extent=extent)
-        if len(source_indices) == 1:
-            continue
-        source_indices.remove(i) #that's the input box - is the index still correct?
+        if i in source_indices:
+            source_indices.remove(i) #that's the input box - is the index still correct?
+        if len(source_indices) == 0:
+            continue 
         subsegs = segs[source_indices]
         #print(f"{i} checking {len(subsegs)} for overlap")
         p = Polygon(np.array(s).T)
@@ -277,14 +285,51 @@ def create_categories(names):
         categories.append({"id":i+1,"name":n,"supercategory":""})
     return categories
 
-def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
-    """Return catalog information for a single crop"""
+
+def single_crop_astro_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
+    """Return astronomy catalog catalog information for a single crop"""
     if wcs is None:
         res = df.where(df.image_name == cc).dropna(how='all')#
     else:
         bl = cc[0][0]
         blra = bl.ra.value
         tr = cc[1][0]
+        trra = tr.ra.value
+        bldec = bl.dec.value
+        trdec = tr.dec.value
+        dd = df.where(df[rakey].DEG > min((blra,trra))).where(df[rakey].DEG < max((blra,trra))).dropna(how='all')
+        res = dd.where(dd[deckey].DEG > min((bldec,trdec))).where(dd[deckey].DEG < max((bldec,trdec))).dropna(how='all')
+        #shift all pixel coordinates relative to crop position in primary image
+        x1,y1,_,_,_,_ = pixvals_from_Skycoord(wcs, bl, tr)
+        
+        #convert maj, min to pixels
+
+        #only have errors on Ra and DEC for MGCLS
+
+        #print(x1,y1)
+        #print(res.source_bbox.head())
+        #res["source_xmin"] -= x1 
+        #res["source_ymin"] -= y1 
+        #res["source_bbox"] = [adjust_bbox_pixvals(row.source_bbox, x1,y1) for _,row in res.iterrows()]
+        #res.apply(lambda x: adjust_bbox_pixvals(x["source_bbox"], x1,y1), axis=1)
+        #res["segmentation"] = [adjust_segmentation_pixvals(row.segmentation.values[0],x1,y1) for _,row in res.iterrows()] #res.apply(lambda x: [x["segmentation"][0] - x1, x["segmentation"][1] - y1], axis=1)
+        #print(res.source_bbox.head())
+    #res["iscrowd"] = check_overlap(res["source_bbox"],res["segmentation"]) #np.zeros_like(res.source_xmin) 
+    return res
+
+def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
+    """Return catalog information for a single crop"""
+    if wcs is None:
+        res = df.where(df.image_name == cc).dropna(how='all')#
+    else:
+        bl = cc[0][0]
+        if not isinstance(bl, SkyCoord):
+            #print(bl, cc[0], cc[0][0])
+            bl = wcs.celestial.pixel_to_world(*cc[0])
+        blra = bl.ra.value
+        tr = cc[1][0]
+        if not isinstance(tr, SkyCoord):
+            tr = wcs.celestial.pixel_to_world(*cc[1])
         trra = tr.ra.value
         bldec =bl.dec.value
         trdec = tr.dec.value
@@ -294,8 +339,8 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
         x1,y1,_,_,_,_ = pixvals_from_Skycoord(wcs, bl, tr)
         #print(x1,y1)
         #print(res.source_bbox.head())
-        res["source_xmin"] -= x1 #flip for test
-        res["source_ymin"] -= y1 #flip for test
+        res["source_xmin"] -= x1 
+        res["source_ymin"] -= y1 
         res["source_bbox"] = [adjust_bbox_pixvals(row.source_bbox, x1,y1) for _,row in res.iterrows()]
         #res.apply(lambda x: adjust_bbox_pixvals(x["source_bbox"], x1,y1), axis=1)
         res["segmentation"] = [adjust_segmentation_pixvals(row.segmentation.values[0],x1,y1) for _,row in res.iterrows()] #res.apply(lambda x: [x["segmentation"][0] - x1, x["segmentation"][1] - y1], axis=1)
@@ -316,8 +361,10 @@ def single_async_prep(i,img_id, vals, segmentations, iscrowd, segmentation_fmt):
         seg = segmentation_xyxy(seg)
     return i, img_id, ic, val, seg #remove ic
 
-def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs, crop_shape, keylist):
+def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs, crop_shape, keylist, transpose=False):
     cc = coordlist[i]
+    if transpose:
+        cc = transpose_coords(cc, wcs)
     #image_name = None
     #if wcs is None:
     #    image_name = df["image_name"][i]
@@ -348,6 +395,17 @@ def unique_annotation_ids(annotations):
         for i,_ in enumerate(annotations):
             annotations[i]['id'] = i
     return annotations
+
+def transpose_coords(coords,wcs):
+    """fix for MGCLS crops"""
+    sc1, sc2 = coords
+    sc1 = sc1[0]
+    sc2 = sc2[0]
+    px1 = wcs.celestial.world_to_pixel(sc1)
+    px2 = wcs.celestial.world_to_pixel(sc2)
+    sc1t = wcs.celestial.pixel_to_world(px1[-1],px1[0])
+    sc2t = wcs.celestial.pixel_to_world(px2[-1],px2[0])
+    return [[sc1t], [sc2t]]
 
 ######### some useful functions #########
 
