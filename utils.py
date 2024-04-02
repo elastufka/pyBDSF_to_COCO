@@ -193,12 +193,11 @@ def bbox_from_ellipse(segseries):
     return bboxes
 
 def get_crop_shape(example_crop_coords, wcs):
-    #row = pd.DataFrame({"bottom_left_coord":, "top_right_coord":example_crop_coords[0][0]}, index=[0])
-        #if not isinstance(example_crop_coords[0], SkyCoord):
-        #    wh = example_crop_coords[1] - example_crop_coords[0]
-        #    #print(wh)
-        #    return wh[0],wh[1]
-        _,_,_,_,w,h = pixvals_from_Skycoord(wcs, example_crop_coords[0][0], example_crop_coords[1][0])
+        try:
+            bl,tr = example_crop_coords[0][0], example_crop_coords[1][0]
+        except TypeError:
+            bl,tr = example_crop_coords
+        _,_,_,_,w,h = pixvals_from_Skycoord(wcs, bl, tr)
         return w,h
 
 def adjust_bbox_pixvals(bbox, xmin, ymin):
@@ -321,12 +320,16 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
     if wcs is None:
         res = df.where(df.image_name == cc).dropna(how='all')#
     else:
-        bl = cc[0][0]
+        bl, tr = cc
+        #bl = cc[0][0]
+        if isinstance(bl, list):
+            bl = bl[0]
         if not isinstance(bl, SkyCoord):
-            #print(bl, cc[0], cc[0][0])
             bl = wcs.celestial.pixel_to_world(*cc[0])
         blra = bl.ra.value
-        tr = cc[1][0]
+        #tr = cc[1][0]
+        if isinstance(tr, list):
+            tr = tr[0]
         if not isinstance(tr, SkyCoord):
             tr = wcs.celestial.pixel_to_world(*cc[1])
         trra = tr.ra.value
