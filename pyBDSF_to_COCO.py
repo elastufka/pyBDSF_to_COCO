@@ -46,10 +46,13 @@ def get_args_parser():
 
 def catalog_coords_to_pix(df, wcs, keylist, bbox_fmt = "xywh"):
     """Convert coordinates in catalog from world to pixel. Rather slow for 10K rows right now, can try terality to speed up."""
-    rakey, deckey, majkey, minkey, pakey = keylist
+    rakey, deckey, majkey, minkey, pakey, classkey = keylist
     if pakey not in df.keys():
         df[pakey,'DEG'] = 0
-    
+    if classkey not in df.keys(): #if no classification, all one class
+        df['category_id'] = 1
+    else:
+        df['category_id'] = df[classkey]
     if not wcs:
         #get the wcs from each individual fits file... this will probably be slow
         assert("image_name" in df.columns)
@@ -95,7 +98,7 @@ def create_image_info(image_id, file_name, image_size, license_id=1, coco_url=""
 
     return image_info
 
-def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, segmentation=None):
+def create_annotation_info(annotation_id, image_id, iscrowd, category_id, bounding_box=None, segmentation=None):
     if not isinstance(bounding_box, list):
         bbox = bounding_box.values[0]
     else: 
@@ -119,7 +122,7 @@ def create_annotation_info(annotation_id, image_id, iscrowd, bounding_box=None, 
     annotation_info = {
         "id": annotation_id,
         "image_id": image_id,
-        "category_id": 1,
+        "category_id": category_id,
         "iscrowd": iscrowd,
         "area": area,
         "bbox": bbox,
@@ -148,7 +151,7 @@ def create_crop_info(i, image, prefix, start_imid, start_annid, crop_shape, cdf)
     crop_json.append(image_info)
 
     for j, row in cdf.iterrows():
-        crop_json.append(create_annotation_info(j+start_annid,i+start_imid, row.iscrowd, row.source_bbox, row.segmentation))
+        crop_json.append(create_annotation_info(j+start_annid,i+start_imid, row.iscrowd, row.source_bbox, row.segmentation, row.category_id))
     #with open(output_file, 'w') as f: 
     #    json.dump(crop_json, f)
     return crop_json
@@ -167,8 +170,8 @@ def run_main(args): #for now
     keydict = None
     if args.keymap:
         keydict = read_keymap(args.keymap)
-    rakey, deckey, majkey, minkey, pakey = keys_used(keydict)
-    keylist = [rakey, deckey, majkey, minkey, pakey]
+    rakey, deckey, majkey, minkey, pakey, classkey = keys_used(keydict)
+    keylist = [rakey, deckey, majkey, minkey, pakey, classkey]
 
     if args.test:
         df = df.sample(n=500).reset_index(drop=True) #for now
@@ -188,8 +191,9 @@ def run_main(args): #for now
         vals = df["source_bbox"]
         segmentations = df["segmentation"]
         iscrowd = check_overlap(vals, segmentations) 
+        cats = df['category_id']
         #print(count, len(vals), len(segmentations), len(iscrowd), type(iscrowd))
-        async_results = mp_execute_async(create_annotation_info, 4, range(1,count), ifunc = single_async_prep, fnargs = [img_id, vals, segmentations, iscrowd, args.seg_fmt])
+        async_results = mp_execute_async(create_annotation_info, 4, range(1,count), ifunc = single_async_prep, fnargs = [img_id, vals, segmentations, iscrowd, args.seg_fmt, cats])
         #annotations = [create_annotation_info(*single_async_prep(i, img_id, vals, segmentations, args.seg_fmt)) for i in range(1,count)]
     else: 
         image_info=[]

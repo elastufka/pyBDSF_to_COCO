@@ -85,14 +85,15 @@ def read_keymap(filename):
 
 def keys_used(keydict):
     if not keydict:
-        return "RA","DEC","Maj","Min","PA"
+        return "RA","DEC","Maj","Min","PA","Class"
     else:
         rakey = keydict["RA"]
         deckey = keydict["DEC"]
         majkey = keydict["Maj"]
         minkey = keydict["Min"]
         pakey = keydict["PA"]
-        return rakey, deckey, majkey, minkey, pakey
+        classkey = keydict["Class"]
+        return rakey, deckey, majkey, minkey, pakey, classkey
 
 def mapdata_from_fits(filename):
     with fits.open(filename) as f: 
@@ -347,10 +348,11 @@ def single_crop_catalog(df, cc, wcs, rakey="RA", deckey="DEC"):
     res["iscrowd"] = check_overlap(res["source_bbox"],res["segmentation"]) #np.zeros_like(res.source_xmin) 
     return res
 
-def single_async_prep(i,img_id, vals, segmentations, iscrowd, segmentation_fmt):
+def single_async_prep(i,img_id, vals, segmentations, iscrowd, segmentation_fmt, category_id):
     val = vals[i] #bounding boxes
     seg = segmentations[i]
     ic = iscrowd[i]
+    cid = category_id[i]
     #print(ic)
     #tt = dt.now()
     #iscrowd = check_overlap(val, segmentations) #this is really slow for big images! limit the check overlap area to within 20-30 px
@@ -358,7 +360,7 @@ def single_async_prep(i,img_id, vals, segmentations, iscrowd, segmentation_fmt):
     #print(len(iscrowd))
     if segmentation_fmt == "[xyxy]":
         seg = segmentation_xyxy(seg)
-    return i, img_id, ic, val, seg #remove ic
+    return i, img_id, ic, val, seg, cid #remove ic
 
 def crop_async_prep(i, coordlist, crop_dir, prefix, start_imid, start_annid, df, wcs, crop_shape, keylist, transpose=False):
     cc = coordlist[i]
