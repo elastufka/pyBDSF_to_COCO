@@ -570,4 +570,50 @@ def combine_coco(jsondir, output_name, info = None, categories= None):
     with open(os.path.join(jsondir,output_name), 'w') as f: 
         json.dump(mdict, f)
 
-        
+def split_large_catalog(catalog, coordlist, keymap=None, subset=1000):
+    """Split a very large source catalog (eg SDC1) into smaller files so that the conversion can actually complete"""
+    coords = np.load(coordlist, allow_pickle=True)
+    cat = read_catalog(catalog)
+    if keymap:
+        keylist = read_keymap(keymap)
+    else:
+        keylist = None
+    rakey, deckey,_,_,_,_ = keys_used(keylist)
+    n_catfiles = len(coords)//subset + 1
+    #print(cat[[rakey,deckey]].describe())
+    for i in range(n_catfiles):
+        if i > 1:
+            subcat = make_subcatalog(coords[i*subset:(i+1)*subset], cat, rakey, deckey) #handle exception for last one
+            subcat.to_csv(f"{catalog[:catalog.rfind('.')]}_subcat{i}.csv")
+        #write
+
+def make_subcatalog(*args):
+    # get bl,tr for all images whose coordinates are listed
+    subcoords, df, rakey, deckey  = args
+    subcat = []
+    for c in subcoords:
+        tr = c[0][1]
+        bl = c[0][0]
+        trra = tr.ra.value
+        blra = bl.ra.value
+        #only for SDC1!
+        if blra > 5:
+            blra -=360
+        bldec =bl.dec.value
+        trdec = tr.dec.value
+        if trra > 5:
+            trra -=360
+        dd = df.where(df[rakey].DEG > min((blra,trra))).where(df[rakey].DEG < max((blra,trra))).dropna(how='all')
+        res = dd.where(dd[deckey].DEG > min((bldec,trdec))).where(dd[deckey].DEG < max((bldec,trdec))).dropna(how='all')
+        subcat.append(res)
+        #get all catalog entries... or indices at least
+        #print(len(res))
+    subcat = pd.concat(subcat)
+
+    return subcat
+
+if __name__ == '__main__':
+    coordlist = "/home/glados/unix-Documents/AstroSignals/data/SDC1/SKAMid_B2_8h_v3_coords.npy"
+    catalog = "/home/glados/unix-Documents/AstroSignals/data/SDC1/True_1400_v2.csv"
+    keymap = "/home/glados/unix-Documents/AstroSignals/data/SDC1/keymap.json"
+    split_large_catalog(catalog, coordlist, keymap=keymap)
